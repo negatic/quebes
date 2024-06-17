@@ -1,6 +1,7 @@
 from queue import Queue
 import concurrent.futures
 
+executor = concurrent.futures.ThreadPoolExecutor()
 queue = Queue()
 
 def task(queue_name:str):
@@ -22,6 +23,12 @@ class Worker():
 
     def start(self) -> None:
         """ Starts a worker in a seprate thread using ThreadPoolExecutor """
+
+        # Creates a New Thread to Run Worker In
+        executor.submit(self.listen_to_queue)
+    
+    def listen_to_queue(self):
+        """ Listens to queue and executes items from it """
         while True:
             if not self.queue.empty():
                 task = self.queue.get()
@@ -33,7 +40,6 @@ class Quebes():
     :param workers: Number of workers to start
     """
     def __init__(self, max_workers=1):
-        self.executor = concurrent.futures.ThreadPoolExecutor()
         self.max_workers = max_workers
     
     def run(self) -> bool:
@@ -43,7 +49,7 @@ class Quebes():
 
             # Spin Up Workers
             for _ in range(self.max_workers):
-                self.executor.submit(Worker(queue=queue).start)
+                Worker(queue=queue).start()
             
             return True
 
