@@ -2,20 +2,6 @@ from queue import Queue
 import concurrent.futures
 
 executor = concurrent.futures.ThreadPoolExecutor()
-queue = Queue()
-
-def task(queue_name:str):
-    """
-    Decorator to run a function as a background task
-    If :: param queue_name :: is not set a random name will be generated
-    """
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            queue.put({'func': func, 'args': args, 'kwargs': kwargs})
-            
-            return True
-        return wrapper
-    return decorator
 
 class Worker():
     def __init__(self, queue:Queue):
@@ -39,21 +25,30 @@ class Quebes():
     Quebes main instance to define settings and starts workers
     :param workers: Number of workers to start
     """
-    def __init__(self, max_workers=1):
-        self.max_workers = max_workers
-    
-    def run(self) -> bool:
-        """ Starts Quebes Instance """
-        try:
-            print('\n Quebes is now running... \n')
+    def __init__(self):
+        self.queues = dict()
+        self.workers = dict()
 
-            # Spin Up Workers
-            for _ in range(self.max_workers):
-                Worker(queue=queue).start()
-            
-            return True
+    def task(self, queue_name:str, workers:int=3):
+        """
+        Decorator to run a function as a background task
+        If :: param queue_name :: is not set a random name will be generated
+        """
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                # Create Queue If It Doesn't Exist
+                if queue_name not in self.queues:
+                    self.queues[queue_name] = Queue()
+                
+                # Create Workers For Queue If They Don't Exist
+                if queue_name not in self.workers:
+                    self.workers[queue_name] = [Worker(self.queues[queue_name]) for _ in range(workers)]
+                    for worker in self.workers[queue_name]:
+                        worker.start()
 
-        except Exception as e:
-            print(f'Error starting quebes: {e}')
-            
-            return False
+                queue  = self.queues[queue_name]
+                queue.put({'func': func, 'args': args, 'kwargs': kwargs})
+                
+                return True
+            return wrapper
+        return decorator
