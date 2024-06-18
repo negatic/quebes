@@ -12,9 +12,9 @@ class Worker():
         """ Starts a worker in a seprate thread using ThreadPoolExecutor """
 
         # Creates a New Thread to Run Worker In
-        executor.submit(self.listen_to_queue)
+        executor.submit(self.listen_and_execute)
     
-    def listen_to_queue(self):
+    def listen_and_execute(self):
         """ Listens to queue and executes items from it """
         while True:
             # Get Task From Queue & Execute It
