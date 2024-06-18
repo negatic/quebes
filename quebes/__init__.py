@@ -1,7 +1,7 @@
 from queue import Queue
 import concurrent.futures
 
-executor = concurrent.futures.ThreadPoolExecutor()
+executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix='quebes')
 
 class Worker():
     def __init__(self, queue:Queue, max_retries):
