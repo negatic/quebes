@@ -1,64 +1,65 @@
+from abc import ABC, abstractmethod
 from queue import Queue
 import concurrent.futures
-import time
 from datetime import datetime
+import time
 
 executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix='quebes')
 
-class Worker():
-    def __init__(self, type:str):
-        self.type = type
-        self.queue = None
-        self.max_retries = None
-        self.schedule_history = dict()
-    
+class Worker(ABC):
     def start(self, *args, **kwargs):
         """ Starts a worker in a seprate thread using ThreadPoolExecutor """
-        if self.type == 'queued_thread':
-            executor.submit(self.queued_thread, *args, **kwargs)
-        
-        elif self.type == 'scheduled_thread':
-            executor.submit(self.scheduled_thread, *args, **kwargs)
-        
-        else:
-            print('Bad worker type')
+        executor.submit(self.execute)
 
-    def queued_thread(self, queue:Queue, max_retries:int):
+    @abstractmethod
+    def execute(self):
+        pass
+
+class QueueWorker(Worker):
+    def __init__(self, queue:str, max_retries:int) -> None:
+        self.queue = queue
+        self.max_retries = max_retries
+
+    def execute(self):
         """ Listens to queue and executes items from it """
-        # Create The Thread
-        with executor:
-            # Keep Thread Open
-            while True:
-                # Get Task From Queue & Execute It
-                if not self.queue.empty():
-                    task = self.queue.get()
-                    
-                    try:
-                        task['func'](*task['args'], **task['kwargs'])
-
-                    except Exception as e:
-                        # Re-Insert Task Into Queue
-                        if task['retries'] < self.max_retries:
-                            print(f'Retrying Task {task["retries"] + 1}/{self.max_retries}')
-                            self.queue.put({'func': task['func'], 
-                                            'args': task['args'], 
-                                            'kwargs': task['kwargs'], 
-                                            'retries': task['retries'] + 1})
-    
-    def scheduled_thread(self, func, period:int, name:str):
-        """ Run a function periodically """
-        with executor:
-            while True:
+        # Keep Thread Open
+        while True:
+            # Get Task From Queue & Execute It
+            if not self.queue.empty():
+                task = self.queue.get()
+                
                 try:
-                    # Run Task
-                    func()
-                    # Update History State
-                    self.schedule_history[name] = datetime.now()
-                    # Wait Before Running It Again
-                    time.sleep(period)
+                    task['func'](*task['args'], **task['kwargs'])
 
                 except Exception as e:
-                    print(f'Error running scheduled task: {e}')
+                    # Re-Insert Task Into Queue
+                    if task['retries'] < self.max_retries:
+                        print(f'Retrying Task {task["retries"] + 1}/{self.max_retries}')
+                        self.queue.put({'func': task['func'], 
+                                        'args': task['args'], 
+                                        'kwargs': task['kwargs'], 
+                                        'retries': task['retries'] + 1})
+
+class ScheduledWorker(Worker):
+    def __init__(self, func, period:int, name:str):
+        self.func = func
+        self.period = period
+        self.name = name
+        self.schedule_history = dict()
+
+    def execute(self):    
+        """ Run a function periodically """
+        while True:
+            try:
+                # Run Task
+                self.func()
+                # Update History State
+                self.schedule_history[self.name] = datetime.now()
+                # Wait Before Running It Again
+                time.sleep(self.period)
+
+            except Exception as e:
+                print(f'Error running scheduled task: {e}')
 
 class Quebes():
     """ 
@@ -82,9 +83,9 @@ class Quebes():
                 
                 # Create Workers For Queue If They Don't Exist
                 if queue_name not in self.workers:
-                    self.workers[queue_name] = [Worker(type='queued_thread') for _ in range(workers)]
+                    self.workers[queue_name] = [QueueWorker(queue=self.queues[queue_name], max_retries=max_retries) for _ in range(workers)]
                     for worker in self.workers[queue_name]:
-                        worker.start(queue=self.queues[queue_name], max_retries=max_retries)
+                        worker.start()
 
                 queue  = self.queues[queue_name]
                 queue.put({'func': func, 'args': args, 'kwargs': kwargs, 'retries': 0})
@@ -97,6 +98,6 @@ class Quebes():
         """ Decorator to execute a function every n seconds """
         def decorator(function):
             def wrapper(*args, **kwargs):
-                Worker(type='scheduled_thread').start(func=function, period=period, name=name)
+                ScheduledWorker(func=function, period=period, name=name).start()
             return wrapper
         return decorator
