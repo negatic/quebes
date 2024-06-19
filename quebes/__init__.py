@@ -1,5 +1,6 @@
 from queue import Queue
 import concurrent.futures
+import time
 
 executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix='quebes')
 
@@ -7,31 +8,29 @@ class Worker():
     def __init__(self, queue:Queue, max_retries):
         self.queue = queue
         self.max_retries = max_retries
-
-    def start(self) -> None:
-        """ Starts a worker in a seprate thread using ThreadPoolExecutor """
-
-        # Creates a New Thread to Run Worker In
-        executor.submit(self.listen_and_execute)
+        self.schedule_history = dict()
     
-    def listen_and_execute(self):
+    def start_queue_thread(self):
         """ Listens to queue and executes items from it """
-        while True:
-            # Get Task From Queue & Execute It
-            if not self.queue.empty():
-                task = self.queue.get()
-                
-                try:
-                    task['func'](*task['args'], **task['kwargs'])
+        # Create The Thread
+        with executor:
+            # Keep Thread Open
+            while True:
+                # Get Task From Queue & Execute It
+                if not self.queue.empty():
+                    task = self.queue.get()
+                    
+                    try:
+                        task['func'](*task['args'], **task['kwargs'])
 
-                except Exception as e:
-                    # Re-Insert Task Into Queue
-                    if task['retries'] < self.max_retries:
-                        print(f'Retrying Task {task["retries"] + 1}/{self.max_retries}')
-                        self.queue.put({'func': task['func'], 
-                                        'args': task['args'], 
-                                        'kwargs': task['kwargs'], 
-                                        'retries': task['retries'] + 1})
+                    except Exception as e:
+                        # Re-Insert Task Into Queue
+                        if task['retries'] < self.max_retries:
+                            print(f'Retrying Task {task["retries"] + 1}/{self.max_retries}')
+                            self.queue.put({'func': task['func'], 
+                                            'args': task['args'], 
+                                            'kwargs': task['kwargs'], 
+                                            'retries': task['retries'] + 1})
 class Quebes():
     """ 
     Quebes main instance to define settings and starts workers
@@ -56,7 +55,7 @@ class Quebes():
                 if queue_name not in self.workers:
                     self.workers[queue_name] = [Worker(queue=self.queues[queue_name], max_retries=max_retries) for _ in range(workers)]
                     for worker in self.workers[queue_name]:
-                        worker.start()
+                        worker.start_queue_thread()
 
                 queue  = self.queues[queue_name]
                 queue.put({'func': func, 'args': args, 'kwargs': kwargs, 'retries': 0})
