@@ -6,12 +6,24 @@ from datetime import datetime
 executor = concurrent.futures.ThreadPoolExecutor(thread_name_prefix='quebes')
 
 class Worker():
-    def __init__(self):
+    def __init__(self, type:str):
+        self.type = type
         self.queue = None
         self.max_retries = None
         self.schedule_history = dict()
     
-    def start_queue_thread(self, queue:Queue, max_retries):
+    def start(self, *args, **kwargs):
+        """ Starts a worker in a seprate thread using ThreadPoolExecutor """
+        if self.type == 'queued_thread':
+            executor.submit(self.queued_thread, *args, **kwargs)
+        
+        elif self.type == 'scheduled_thread':
+            executor.submit(self.scheduled_thread, *args, **kwargs)
+        
+        else:
+            print('Bad worker type')
+
+    def queued_thread(self, queue:Queue, max_retries:int):
         """ Listens to queue and executes items from it """
         # Create The Thread
         with executor:
@@ -33,7 +45,7 @@ class Worker():
                                             'kwargs': task['kwargs'], 
                                             'retries': task['retries'] + 1})
     
-    def start_scheduled_thread(self, func, period:int, name:str):
+    def scheduled_thread(self, func, period:int, name:str):
         """ Run a function periodically """
         with executor:
             while True:
@@ -70,9 +82,9 @@ class Quebes():
                 
                 # Create Workers For Queue If They Don't Exist
                 if queue_name not in self.workers:
-                    self.workers[queue_name] = [Worker() for _ in range(workers)]
+                    self.workers[queue_name] = [Worker(type='queued_thread') for _ in range(workers)]
                     for worker in self.workers[queue_name]:
-                        worker.start_queue_thread(queue=self.queues[queue_name], max_retries=max_retries)
+                        worker.start(queue=self.queues[queue_name], max_retries=max_retries)
 
                 queue  = self.queues[queue_name]
                 queue.put({'func': func, 'args': args, 'kwargs': kwargs, 'retries': 0})
@@ -85,6 +97,6 @@ class Quebes():
         """ Decorator to execute a function every n seconds """
         def decorator(function):
             def wrapper(*args, **kwargs):
-                Worker().start_scheduled_thread(function, period, name)
+                Worker(type='scheduled_thread').start(func=function, period=period, name=name)
             return wrapper
         return decorator
